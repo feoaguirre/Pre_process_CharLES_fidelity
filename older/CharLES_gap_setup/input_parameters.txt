@@ -1,0 +1,50 @@
+Run name, L20_D80_M6_Re3000, string
+#################### Geometry Parameters ####################
+Gap length (L/delta_star), 20, double
+Gap depth (D/delta_star), 80, double
+Gap width (W/delta_star - 0 for 2D), 0, double
+Pregap slip length (L1/delta_star), 10, double
+Pregap noslip length (L2/delta_star), 136.2986, double
+Postgap length (L3/delta_star), 100, double
+Domain height (H/delta_star), 104, double
+#################### Mesh Parameters ####################
+Mesh size at far field in units of delta_star (HCP_DELTA), 1, int
+Max refinement level (hat(gamma)), 4, int
+Height above solids with same refinement (D), 1, int
+Number of cells in every following layer of refinement (NLAYERS), 10, array
+Number of smoothing iterations (NSMOOTH), 10, int
+#################### Flow Parameters ####################
+Reynolds delta_star, 3000, double
+Mach, 6, double
+Inflow speed (U_inf), 1, double
+Inflow density (rho_inf), 1, double
+Inflow temperature (T_inf), 1, double
+gamma, 1.4, double
+Prandtl number, 0.72, double
+Mu power law exponent, 0.95, double
+Wall boundary condition (ADIABATIC/ISOTHERMAL), ISOTHERMAL, string
+Wall temperature (T_wall/T_inf - ignored in adiabatic case), 1.0, double
+#################### Simulation Parameters ####################
+Simulation time to run transient part (in Flow Through Time), 50, int
+Simulation time to run steady part (in Flow Through Time), 50, int
+CFL, 1.0, double
+Check interval, 1000, int
+Image write interval, 3000, int
+Space probes write interval, 10000, int
+Time probes write interval, 100, int
+Sub Grid Scale Model (VREMAN/NONE), NONE, string
+Use wall modeling? (Yes/No), No, bool
+#################### Probe Parameters ####################
+### Time Probes ###
+Shear layer, 10, int, time_probe
+Gap front wall, 10, int, time_probe
+Gap floor, 10, int, time_probe
+Gap back wall, 10, int, time_probe
+Gap mid height, 10, int, time_probe
+### Space Probes: num_of_parallel_probes - num_of_perpendicular_probes - max_distance_from_wall/delta_star ###
+Pregap noslip, 101-101-5
+Gap, 101-201-12
+Postgap, 101-101-7
+### Additional space probe options not being used (switch hash for comma) ###
+Gap front wall# 101-1-0
+Gap back wall# 101-1-0

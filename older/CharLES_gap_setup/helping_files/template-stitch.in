@@ -1,0 +1,32 @@
+# Base mesh resolution
+DEFINE HCP_DELTA_VAL = 0
+DEFINE MAX_REFINEMENT_LEVEL = 0
+DEFINE HALF_W = 0
+DEFINE L = 0
+DEFINE D = 0
+DEFINE NLAYERS_VAL = 0
+DEFINE NSMOOTH_VAL = 0
+DEFINE REFINEMENT_HEIGHT_ABOVE_PLATE = 0
+
+# Define the surface and point seeding
+PART SURF SBIN ./helping_files/geometry.sbin
+
+# base mesh resolution
+HCP_DELTA $(HCP_DELTA_VAL)
+
+#Refinement windows are specified here. y0 is the zone representing the plate.
+HCP_WINDOW FAZONE SOLIDS LEVEL=$(MAX_REFINEMENT_LEVEL) D=$(REFINEMENT_HEIGHT_ABOVE_PLATE) NLAYERS=$(NLAYERS_VAL)
+HCP_WINDOW BOX 0 $(L) -$(D) $(REFINEMENT_HEIGHT_ABOVE_PLATE) -$(HALF_W) $(HALF_W) LEVEL=$(MAX_REFINEMENT_LEVEL)
+
+# Number of smoothing iterations
+NSMOOTH $(NSMOOTH_VAL)
+
+# Images
+WRITE_IMAGE NAME=./results/mesh_images/z0 GEOM=Z_PLANE_FRAC 0.5 SIZE=2000 2000 VAR=mesh UP= 0 1 0  MESH_ON_SURFACE
+WRITE_IMAGE NAME=./results/mesh_images/z0_closeup GEOM=PLANE $(L)*1.0/2 0 0 0 0 1 SIZE=5000 5000 VAR=mesh UP=0 1 0 WIDTH=$(L) MESH_ON_SURFACE
+
+WRITE_IMAGE NAME=./results/mesh_images/x0_a GEOM=PLANE $(L)*1.0/2 0 0 -1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=1
+WRITE_IMAGE NAME=./results/mesh_images/x0_b GEOM=PLANE $(L) 0 0 1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=1
+
+# INTERACTIVE
+WRITE_MLES ./helping_files/restart.mles

@@ -1,0 +1,174 @@
+# =============================================================================
+# CharLES Simulation Configuration File
+# =============================================================================
+
+identity:
+  run_name: "L20_D80_M6_Re3000"
+  solver_type: "DNS"                    # Options: "DNS", "LES"
+  flow_regime: "hypersonic"             # Options: "subsonic", "supersonic", "hypersonic"
+  dimensionalization_base: "delta_star" # Options: "delta", "delta_star", "theta", "physical_m"
+
+simulation_control:
+  pbs_queue: "mafat_new_q"              # Target cluster queue (mafat_new_q 256 threads, mafat10_q 384 threads, mafat14_512_q 512 threads)
+  transient_simtime_ftt: 200.0
+  steady_simtime_ftt: 100.0
+  cfl: 1.0
+
+geometry:
+  structure_type: "symmetric_cavity"    # Options: "symmetric_cavity", "step", "roughness"
+  structure_length: 20.0
+  structure_depth: 80.0
+  span_z: 0.0                           # Spanwise structure dimension (set to 0.0 for pure 2D cases)
+  domain_z: 0.0                         # Total domain size in Z (if 0.0, code enforces 1-cell thickness for CharLES)
+
+domain_sizing:
+  l1_fixed_length: 20.0                 # L1: Fixed length for pregap slip
+  
+  l3_definition: "multiple_of_L"        # Options: "multiple_of_L", "fixed_end_x"
+  l3_value: 20.0                         # If "multiple_of_L", L3 = 2.0 * L. If "fixed_end_x", L3 ends at X = 2.0
+  
+  h_definition: "multiple_of_delta99"   # Options: "multiple_of_delta99", "fixed_end_y"
+  h_value: 20.0                          # If "multiple_of_delta99", H = 5.0 * delta99.
+
+# ---------------------------------------------------------------------------
+# Mesh Resolution Control
+# ---------------------------------------------------------------------------
+mesh_control:
+  target_y_plus: 0.9                    # Target y+ at the wall (< 1.0 for DNS, 30-50 for Wall-Modeled LES)
+  hcp_delta: 1.0                # Controle explícito da célula mãe (freestream)
+  max_refinement_level: 4       # Teto máximo de refinamento para evitar estouro de RAM
+  nlayers: 8
+  nsmooth: 20
+
+flow_physics:
+  target_reynolds: 3000.0                # Target Reynolds number at the leading edge
+  mach_number: 6.0
+  inflow_u: 1.0
+  inflow_rho: 1.0
+  inflow_T: 1.0
+  gamma: 1.4
+  prandtl: 0.72
+  mu_power_law: 0.95
+
+# ---------------------------------------------------------------------------
+# Boundary Layer Setup
+# method Options: "eckert", "similarity_solution", "fixed_length", "local_dns"
+# ---------------------------------------------------------------------------
+boundary_layer_setup:
+  method: "similarity_solution"
+  fixed_l2_length: 15.0                 # Only used if method == "fixed_length"
+
+boundary_conditions:
+  wall_bc: "ISOTHERMAL"                  # Options: "ADIABATIC", "ISOTHERMAL"
+  wall_T: 1.0                           # Wall temperature (ignored if ADIABATIC)
+  z_boundaries: "PERIODIC"              # Options: "PERIODIC", "SYMMETRY" (ignored if domain_z == 0.0)
+
+
+io_and_probes:
+  check_interval_steps: 1000
+  image_interval_steps: 10000
+  space_probes_write_interval: 4000
+  time_probes_write_interval: 1000
+  
+  # ---------------------------------------------------------------------------
+  # Spatial (Space) Probes Configurations
+  # ... (resto do arquivo permanece igual)
+  
+  # ---------------------------------------------------------------------------
+  # Spatial (Space) Probes Configurations
+  # 
+  # Definition Rules:
+  # Bounds: [start, end]. 
+  # - If start == end, that axis is fixed.
+  # - XY Plane Example: X varies, Y varies, Z is fixed (start == end).
+  # - YZ Plane Example: X is fixed, Y varies, Z varies.
+  # - XZ Plane Example: X varies, Y is fixed, Z varies.
+  #
+  # ---------------------------------------------------------------------------
+  # Spacing types reference:
+  #   - "uniform": provide 'points: N' (ex: 100 pontos fixos)
+  #   - "mesh_multiple": provide 'value: N' (multiplier)
+  #     Calculates density relative to base mesh cell size (HCP_DELTA):
+  #     Points = Length / (HCP_DELTA * value)
+  #     (Ex: value: 1.0 => 1 probe per cell; 0.5 => 2 probes per cell)
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  space_probes:
+    # --- Traditional Post-Processing Probes ---
+    # pregap_noslip: # Example of an XY plane (Z is fixed at 0.0)
+    #   x_bounds: [-50.0, 0.0]
+    #   y_bounds: [0.0, 5.0]
+    #   z_bounds: [0.0, 0.0]
+    #   x_spacing: {type: "uniform", points: 51}
+    #   y_spacing: {type: "uniform", points: 21}
+    #   z_spacing: {type: "uniform", points: 1}
+
+    # gap_front_wall: # Example of a YZ plane (X is fixed at 0.0)
+    #   x_bounds: [0.0, 0.0]
+    #   y_bounds: [-10.0, 0.0]
+    #   z_bounds: [-5.0, 5.0]
+    #   x_spacing: {type: "uniform", points: 1}
+    #   y_spacing: {type: "uniform", points: 51}
+    #   z_spacing: {type: "uniform", points: 21}
+
+    gap_shear_layer: # Campo 2D para capturar a dinâmica da shear layer
+      x_bounds: [0.0, 20.0]
+      y_bounds: [-8.0, 8.0]
+      z_bounds: [0.0, 0.0]
+      x_spacing: {type: "mesh_multiple", value: 2.0}
+      y_spacing: {type: "mesh_multiple", value: 2.0}
+      z_spacing: {type: "uniform", points: 1}
+
+    # gap_back_wall: # Example of a YZ plane (X is fixed at cavity length)
+    #   x_bounds: [25.0, 25.0]
+    #   y_bounds: [-10.0, 0.0]
+    #   z_bounds: [-5.0, 5.0]
+    #   x_spacing: {type: "uniform", points: 1}
+    #   y_spacing: {type: "uniform", points: 51}
+    #   z_spacing: {type: "uniform", points: 21}
+
+    postgap: # Example of an XY plane (Z is fixed at 0.0)
+      x_bounds: [20.0, 50.0]
+      y_bounds: [0.0, 5.0]
+      z_bounds: [0.0, 0.0]
+      x_spacing: {type: "mesh_multiple", value: 2.0}
+      y_spacing: {type: "mesh_multiple", value: 3.0}
+      z_spacing: {type: "uniform", points: 1}
+
+    # --- Extra/Custom Zones (Uncomment to use) ---
+    # custom_3d_box_example: # Full 3D grid capturing the wake
+    #   x_bounds: [25.0, 35.0]
+    #   y_bounds: [0.0, 5.0]
+    #   z_bounds: [-2.0, 2.0]
+    #   x_spacing: {type: "uniform", points: 50}
+    #   y_spacing: {type: "uniform", points: 50}
+    #   z_spacing: {type: "uniform", points: 10}
+
+  # ---------------------------------------------------------------------------
+  # Temporal (Time) Probes Configurations
+  # 
+  # High-frequency data extraction points.
+  # Spacing type: "uniform", "linear", "logarithmic", "exponential", "custom"
+  # z_planes: Explicit list of Z-coordinates where these probes will be placed.
+  # ---------------------------------------------------------------------------
+  time_probes:
+    shear_layer: # Traditional Shear Layer time probe
+      x_bounds: [0.0, 20.0]
+      y_bounds: [-2.0, 8.0]
+      z_planes: [0.0]             # Will replicate this line at 3 different Z locations
+      x_spacing: {type: "uniform", points: 5}
+      y_spacing: {type: "uniform", points: 7}
+      
+    boundary_layer_postgap: # Traditional Shear Layer time probe
+      x_bounds: [20, 200.0]
+      y_bounds: [0.0, 10.0]
+      z_planes: [0.0]             # Will replicate this line at 3 different Z locations
+      x_spacing: {type: "linear", points: 10}
+      y_spacing: {type: "linear", points: 6}
+    # --- Extra/Custom Zones (Uncomment to use) ---
+    # boundary_layer_profile: # Logarithmic line going vertically up from the wall
+    #   x_bounds: [12.5, 12.5]
+    #   y_bounds: [0.0, 5.0]
+    #   z_planes: [0.0]
+    #   x_spacing: {type: "uniform", points: 1}
+    #   y_spacing: {type: "logarithmic", points: 50}

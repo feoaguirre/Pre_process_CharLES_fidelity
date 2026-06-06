@@ -1,0 +1,52 @@
+# Base mesh resolution
+DEFINE HCP_DELTA_VAL = 1.0
+DEFINE MAX_REFINEMENT_LEVEL = 4
+DEFINE HALF_W = 1.0
+DEFINE L = 20.0
+DEFINE D = 80.0
+DEFINE NLAYERS_VAL = 8
+DEFINE NSMOOTH_VAL = 20
+DEFINE REFINEMENT_HEIGHT_ABOVE_PLATE = 5.4399
+
+# Define the surface and point seeding
+PART SURF SBIN ./helping_files/geometry.sbin
+
+# base mesh resolution
+HCP_DELTA $(HCP_DELTA_VAL)
+
+#Refinement windows are specified here. y0 is the zone representing the plate.
+HCP_WINDOW FAZONE SOLIDS LEVEL=$(MAX_REFINEMENT_LEVEL) D=$(REFINEMENT_HEIGHT_ABOVE_PLATE) NLAYERS=$(NLAYERS_VAL)
+HCP_WINDOW BOX 0 $(L) -$(D) $(REFINEMENT_HEIGHT_ABOVE_PLATE) -$(HALF_W) $(HALF_W) LEVEL=$(MAX_REFINEMENT_LEVEL)
+
+# Number of smoothing iterations
+NSMOOTH $(NSMOOTH_VAL)
+
+
+# ------------------------------------------------------------------------------
+# Image Generation
+# ------------------------------------------------------------------------------
+WRITE_IMAGE NAME=./results/mesh_images/z0 GEOM=Z_PLANE_FRAC 0.5 SIZE=2000 2000 VAR=mesh UP= 0 1 0  MESH_ON_SURFACE
+WRITE_IMAGE NAME=./results/mesh_images/z0_closeup GEOM=PLANE $(L)*1.0/2 0 0 0 0 1 SIZE=5000 5000 VAR=mesh UP=0 1 0 WIDTH=$(L) MESH_ON_SURFACE
+
+WRITE_IMAGE NAME=./results/mesh_images/x0_a GEOM=PLANE $(L)*1.0/2 0 0 -1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=1
+WRITE_IMAGE NAME=./results/mesh_images/x0_b GEOM=PLANE $(L) 0 0 1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=1
+
+# INTERACTIVE
+WRITE_MLES ./helping_files/restart.mles
+
+# ------------------------------------------------------------------------------
+# Image Generation (Mesh Visualization)
+# ------------------------------------------------------------------------------
+
+# 1. Global 2D view (Full Domain)
+WRITE_IMAGE NAME=./results/mesh_images/mesh_global GEOM=Z_PLANE_FRAC 0.5 SIZE=4000 4000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE
+
+# 2. Closeup view of the Cavity region
+WRITE_IMAGE NAME=./results/mesh_images/mesh_cavity_closeup GEOM=PLANE $(L)*0.5 0 0 0 0 1 SIZE=4000 4000 VAR=mesh UP=0 1 0 WIDTH=2.5*$(L) MESH_ON_SURFACE
+
+# 3. X-Planes (Cross-sections inside the cavity and at the trailing edge)
+WRITE_IMAGE NAME=./results/mesh_images/mesh_x0_mid GEOM=PLANE $(L)*0.5 0 0 1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=$(D)*1.5
+WRITE_IMAGE NAME=./results/mesh_images/mesh_x0_end GEOM=PLANE $(L) 0 0 1 0 0 SIZE=2000 2000 VAR=mesh UP=0 1 0 MESH_ON_SURFACE WIDTH=$(D)*1.5
+
+# Write the final mesh
+WRITE_MLES ./helping_files/restart.mles

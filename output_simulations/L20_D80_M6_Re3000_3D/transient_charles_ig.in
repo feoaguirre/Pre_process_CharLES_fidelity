@@ -1,0 +1,88 @@
+# ==============================================================================
+# CharLES Simulation Template: Transient State
+# ==============================================================================
+
+# Defining parameters for fluid properties
+DEFINE L = 20.0
+DEFINE RE_DELTA_STAR = 3000.0
+DEFINE MACH = 6.0
+DEFINE U_INF = 1.0
+DEFINE RHO_INF = 1.0
+DEFINE T_INF = 1.0
+DEFINE G = 1.4
+DEFINE PR_LAM_VAL = 0.72
+DEFINE MU_POWER_LAW_VAL = 0.95
+DEFINE TRANSIENT_SIMTIME_VAL = 66200.2776
+DEFINE CHECK_INTERVAL_VAL = 1000
+DEFINE CFL_VAL = 1.0
+DEFINE WALL_BC = WALL_ISOTHERMAL T_WALL 1.0
+DEFINE SGS_MODEL_VAL = NONE
+DEFINE TOTAL_DOMAIN_LENGTH = 331.0013881872036
+DEFINE IMAGE_WRITE_INTERVAL = 10000
+DEFINE SPACE_PROBES_WRITE_INTERVAL = 10000
+DEFINE TIME_PROBES_WRITE_INTERVAL = 1000
+
+# Defining parameters for derived fluid properties
+DEFINE P_INF = (1.0/($(G)*$(MACH)*$(MACH)))
+DEFINE MU_INF = ($(RHO_INF)*$(U_INF)*1.0/$(RE_DELTA_STAR))
+
+# Restart file (Mesh file and initial conditions taken from steady run)
+RESTART ./helping_files/restart.mles
+
+# Setting reference values (flow properties at inf)
+PR_LAM = $(PR_LAM_VAL)
+MU_POWER_LAW = $(MU_POWER_LAW_VAL)
+RHO_REF = $(RHO_INF)
+P_REF = $(P_INF)
+T_REF = $(T_INF)
+MU_REF = $(MU_INF)
+GAMMA = $(G)
+EOS = IDEAL_GAS
+
+# Time advancement
+TIMESTEP = CFL $(CFL_VAL)
+SIMTIME = $(TRANSIENT_SIMTIME_VAL)
+CHECK_INTERVAL = $(CHECK_INTERVAL_VAL)
+
+# Initialization
+INIT_RUP $(RHO_INF) 0 0 0 $(P_INF)
+
+# Boundary conditions
+INFLOW = CBC_RUP $(RHO_INF) $(U_INF) 0.0 0.0 $(P_INF)
+OUTFLOW = NSCBC_OUTLET_PRESSURE P_REF $(P_INF) L_REF $(TOTAL_DOMAIN_LENGTH)
+TOP = NSCBC_OUTLET_PRESSURE P_REF $(P_INF) L_REF $(TOTAL_DOMAIN_LENGTH)
+RIGHT = SLIP
+LEFT = SLIP
+PREGAP_SLIP = SLIP
+SOLIDS = $(WALL_BC)
+
+# Wall modeling
+SGS_MODEL = $(SGS_MODEL_VAL)
+
+# ------------------------------------------------------------------------------
+# Probes Configuration
+# ------------------------------------------------------------------------------
+POINTCLOUD_PROBE NAME=./results/space_probes/pregap_noslip/data INTERVAL 10000 GEOM=FILE probe_coordinates/SpaceProbe_pregap_noslip.csv VARS=comp(u,0) comp(u,1) comp(u,2) p rho T comp(avg(u),0) comp(avg(u),1) comp(avg(u),2) avg(p) avg(rho) avg(T)
+POINTCLOUD_PROBE NAME=./results/space_probes/postgap_after_shockwave/data INTERVAL 10000 GEOM=FILE probe_coordinates/SpaceProbe_postgap_after_shockwave.csv VARS=comp(u,0) comp(u,1) comp(u,2) p rho T comp(avg(u),0) comp(avg(u),1) comp(avg(u),2) avg(p) avg(rho) avg(T)
+POINTCLOUD_PROBE NAME=./results/space_probes/postgap/data INTERVAL 10000 GEOM=FILE probe_coordinates/SpaceProbe_postgap.csv VARS=comp(u,0) comp(u,1) comp(u,2) p rho T comp(avg(u),0) comp(avg(u),1) comp(avg(u),2) avg(p) avg(rho) avg(T)
+POINTCLOUD_PROBE NAME=./results/time_probes/shear_layer/data INTERVAL 1000 GEOM=FILE probe_coordinates/TimeProbe_shear_layer.csv VARS=comp(u,0) comp(u,1) comp(u,2) p rho T
+POINTCLOUD_PROBE NAME=./results/time_probes/boundary_layer_postgap/data INTERVAL 1000 GEOM=FILE probe_coordinates/TimeProbe_boundary_layer_postgap.csv VARS=comp(u,0) comp(u,1) comp(u,2) p rho T
+
+# Probe IO Intervals
+SPACE_PROBE_WRITE_INTERVAL = $(SPACE_PROBES_WRITE_INTERVAL)
+TIME_PROBE_WRITE_INTERVAL = $(TIME_PROBES_WRITE_INTERVAL)
+
+# Conditional Y+ Probe
+CONDITIONAL_PROBE NAME=./results/y_plus/y_plus WRITE_INTERVAL $(SPACE_PROBES_WRITE_INTERVAL) SAMPLE_INTERVAL 1 CVAR comp(SOLIDS:x_bf,0) NBIN 2000 VARS SOLIDS:y_plus()
+
+# ------------------------------------------------------------------------------
+# Image Generation
+# ------------------------------------------------------------------------------
+# Vertical speed v
+WRITE_IMAGE NAME=./results/images/v INTERVAL $(IMAGE_WRITE_INTERVAL) GEOM=Z_PLANE_FRAC 0.5 VAR=comp(u,1) SIZE 4000 4000 UP = 0 1 0
+
+# Dilation Field div(u)
+WRITE_IMAGE NAME=./results/images/divu INTERVAL $(IMAGE_WRITE_INTERVAL) GEOM=Z_PLANE_FRAC 0.5 VAR=div(u) SIZE 4000 4000 UP = 0 1 0
+
+# Density Field rho
+WRITE_IMAGE NAME=./results/images/rho INTERVAL $(IMAGE_WRITE_INTERVAL) GEOM=Z_PLANE_FRAC 0.5 VAR=rho SIZE 4000 4000 UP = 0 1 0
