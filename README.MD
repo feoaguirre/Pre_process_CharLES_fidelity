@@ -24,7 +24,7 @@ This repository contains a robust, automated Python-based framework designed to 
 ## 📂 Project Structure
 
 Ensure the working directory strictly follows this hierarchy:
-
+'''
 ├── core/
 │   ├── mesh_planner.py       # Physics-to-discretization logic
 │   └── template_writer.py    # YAML-to-CharLES syntax injection
@@ -36,7 +36,7 @@ Ensure the working directory strictly follows this hierarchy:
 │   └── template-transient_charles_ig.in
 ├── probe_coordinates/        # Pre-calculated coordinate arrays (.csv)
 └── run_preprocess.py         # Main pipeline initialization script
-
+'''
 
 ## ⚙️ Execution Workflow
 
