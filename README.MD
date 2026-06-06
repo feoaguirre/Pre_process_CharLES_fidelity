@@ -36,7 +36,7 @@ Ensure the working directory strictly follows this hierarchy:
 │   └── template-transient_charles_ig.in
 ├── probe_coordinates/            # Pre-calculated coordinate arrays (.csv)
 └── run_preprocess.py             # Main pipeline initialization script
-
+'''
 
 ## ⚙️ Execution Workflow
 
