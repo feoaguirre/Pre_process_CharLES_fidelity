@@ -24,7 +24,7 @@ This repository contains a robust, automated Python-based framework designed to 
 ## 📂 Project Structure
 
 Ensure the working directory strictly follows this hierarchy:
-'''
+```text
 ├── core/
 │   ├── mesh_planner.py           # Physics-to-discretization logic
 │   └── template_writer.py        # YAML-to-CharLES syntax injection
