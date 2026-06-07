@@ -4,9 +4,10 @@ Description: Parses the simulation_config.yaml file into strongly typed,
              immutable Python dataclasses. Handles automated 2D grid validation
              and nested probe spacing configurations. 
              
-             By using @dataclass(frozen=True), we ensure that once the configuration
-             is loaded, no other part of the code can accidentally change a value 
-             (e.g., changing Mach number halfway through the mesh generation).
+             By utilizing @dataclass(frozen=True), the framework guarantees that 
+             once the configuration is loaded into memory, no subsequent module 
+             can inadvertently mutate a value (e.g., modifying the Mach number 
+             during mesh generation).
 """
 
 import yaml
@@ -19,72 +20,71 @@ from typing import Dict, List, Optional
 
 @dataclass(frozen=True)
 class IdentityConfig:
-    """Basic identification and core solver decisions."""
-    run_name: str                # Name of the output folder and PBS job
-    solver_type: str             # "DNS" or "LES" (influences mesh y+ target and SGS models)
-    flow_regime: str             # "subsonic", "supersonic", or "hypersonic"
-    dimensionalization_base: str # E.g., "delta_star". Used by the physics engine to scale outputs.
+    """Basic identification and core solver parameters."""
+    run_name: str                # Name of the output directory and PBS job identifier
+    solver_type: str             # "DNS" or "LES" (dictates mesh y+ targets and SGS model activation)
+    flow_regime: str             # Flow classification ("subsonic", "supersonic", or "hypersonic")
+    dimensionalization_base: str # Reference length (e.g., "delta_star"). Used to scale spatial outputs.
 
 @dataclass(frozen=True)
 class GeometryConfig:
-    """Physical dimensions of the structure being simulated."""
-    structure_type: str          # "symmetric_cavity", "step", etc.
-    structure_length: float      # L
-    structure_depth: float       # D
-    span_z: float                # Span of the structure (0.0 for 2D)
-    domain_z: float              # Span of the entire domain. If 0.0, parser assumes quasi-2D.
+    """Physical dimensions of the structural domain."""
+    structure_type: str          # Geometry classification (e.g., "symmetric_cavity", "backward_facing_step")
+    structure_length: float      # Streamwise length of the structure (L)
+    structure_depth: float       # Wall-normal depth of the structure (D)
+    span_z: float                # Spanwise width of the structure (Set to 0.0 for pure 2D setups)
+    domain_z: float              # Total spanwise width of the fluid domain. If 0.0, the parser forces a quasi-2D grid.
 
 @dataclass(frozen=True)
 class DomainSizingConfig:
-    """Rules for how the computational domain boundaries are calculated."""
-    l1_fixed_length: float       # Physical length of the slip wall before the no-slip plate
-    l3_definition: str           # Rule for the wake region ("multiple_of_L" or "fixed_end_x")
-    l3_value: float              # Multiplier or exact coordinate based on l3_definition
-    h_definition: str            # Rule for domain height ("multiple_of_delta99" or "fixed_end_y")
-    h_value: float               # Multiplier or exact coordinate based on h_definition
+    """Rules and multipliers defining the outer boundaries of the computational domain."""
+    l1_fixed_length: float       # Absolute length of the slip-wall development region preceding the no-slip plate
+    l3_definition: str           # Boundary rule for the downstream wake region ("multiple_of_L" or "fixed_end_x")
+    l3_value: float              # Corresponding multiplier or absolute coordinate for L3
+    h_definition: str            # Boundary rule for the domain height ("multiple_of_delta99" or "fixed_end_y")
+    h_value: float               # Corresponding multiplier or absolute coordinate for the top boundary
 
-@dataclass
+@dataclass(frozen=True)
 class MeshControlConfig:
-    target_y_plus: float
-    # Add these new lines:
-    hcp_delta: float
-    max_refinement_level: int
-    # Keep your existing fields:
-    nlayers: int
-    nsmooth: int
+    """Constraints for the Voronoi octree mesh generation."""
+    target_y_plus: float         # Desired non-dimensional wall distance for the first cell layer
+    hcp_delta: float             # Base Hexagonal Close-Packed (HCP) far-field cell size
+    max_refinement_level: int    # Maximum allowable octree bisections (prevents Out-Of-Memory errors)
+    nlayers: int                 # Number of isotropic layers maintained near solid boundaries
+    nsmooth: int                 # Number of smoothing iterations applied to the grid transitions
 
 @dataclass(frozen=True)
 class FlowPhysicsConfig:
-    """Thermodynamic and aerodynamic properties of the freestream flow."""
-    target_reynolds: float       # Desired Re at the structure's leading edge
-    mach_number: float           # Freestream Mach (M_inf)
-    inflow_u: float              # Non-dimensional velocity (usually 1.0)
-    inflow_rho: float            # Non-dimensional density (usually 1.0)
-    inflow_T: float              # Non-dimensional temperature (usually 1.0)
-    gamma: float                 # Heat capacity ratio (Cp/Cv, typically 1.4 for air)
-    prandtl: float               # Prandtl number (typically 0.72 for air)
-    mu_power_law: float          # Viscosity power-law exponent (e.g., 0.76)
+    """Thermodynamic and aerodynamic boundary conditions for the freestream flow."""
+    target_reynolds: float       # Reference Reynolds number evaluated at the structure's leading edge
+    mach_number: float           # Freestream Mach number (M_inf)
+    inflow_u: float              # Non-dimensional streamwise velocity (standardized to 1.0)
+    inflow_rho: float            # Non-dimensional freestream density (standardized to 1.0)
+    inflow_T: float              # Non-dimensional freestream temperature (standardized to 1.0)
+    gamma: float                 # Specific heat ratio (Cp/Cv, typically 1.4 for ideal air)
+    prandtl: float               # Prandtl number (typically 0.72 for standard air)
+    mu_power_law: float          # Exponent for the viscosity power-law model (e.g., 0.76 or 0.95)
 
 @dataclass(frozen=True)
 class BoundaryLayerSetupConfig:
-    """Configuration for calculating boundary layer growth to position the structure."""
-    method: str                  # "eckert", "similarity_solution", "fixed_length", or "local_dns"
-    fixed_l2_length: float       # Absolute distance L2 (used only if method == "fixed_length")
+    """Methodology for estimating the boundary layer growth to position the geometric structure."""
+    method: str                  # Calculation regime: "eckert", "similarity_solution", "fixed_length", or "local_dns"
+    fixed_l2_length: float       # Absolute development length (L2). Evaluated only if method == "fixed_length"
 
 @dataclass(frozen=True)
 class BoundaryConditionsConfig:
-    """Thermal conditions applied to the solid walls."""
-    wall_bc: str                 # "ADIABATIC" (q_w = 0) or "ISOTHERMAL" (T_w = constant)
-    wall_T: float                # Wall temperature ratio (ignored if wall_bc is ADIABATIC)
-    z_boundaries: str            # "PERIODIC" or "SYMMETRY" (used for 3D spans)
+    """Thermal conditions enforced upon all solid no-slip boundaries."""
+    wall_bc: str                 # "ADIABATIC" (zero heat flux) or "ISOTHERMAL" (constant wall temperature)
+    wall_T: float                # Wall-to-freestream temperature ratio (T_w / T_inf). Ignored if ADIABATIC.
+    z_boundaries: str            # Spanwise boundary condition paradigm ("PERIODIC" or "SYMMETRY")
 
 @dataclass(frozen=True)
 class SimulationControlConfig:
-    """Solver time-stepping and high-performance computing (HPC) settings."""
-    pbs_queue: str               # Target Zeus cluster queue (e.g., mafat_new_q)
-    transient_simtime_ftt: float # Flow Through Times to flush initial transients
-    steady_simtime_ftt: float    # Flow Through Times for statistical data gathering
-    cfl: float                   # Courant–Friedrichs–Lewy limit for time stepping
+    """Parameters governing time advancement and High-Performance Computing (HPC) deployment."""
+    pbs_queue: str               # Target scheduling queue on the HPC cluster
+    transient_simtime_ftt: float # Flow-Through Times (FTT) allocated to flush numerical initialization transients
+    steady_simtime_ftt: float    # Flow-Through Times (FTT) allocated for active statistical data collection
+    cfl: float                   # Courant-Friedrichs-Lewy (CFL) limit governing dynamic time-stepping
 
 # =============================================================================
 # PROBES & DATA EXTRACTION BLOCKS
@@ -92,34 +92,34 @@ class SimulationControlConfig:
 
 @dataclass(frozen=True)
 class Spacing1DConfig:
-    """Defines how points are distributed along a single axis (1D)."""
-    type: str                                # "uniform", "logarithmic", "exponential", "mesh_like", "custom"
-    points: Optional[int] = None             # Number of points (used by uniform/log/exp)
-    value: Optional[float] = None            # Multiplier factor (used by mesh_like)
-    custom_vector: List[float] = field(default_factory=list) # Explicit coordinate array (if type == "custom")
+    """Defines the point distribution logic along a single spatial axis."""
+    type: str                                # Distribution pattern: "uniform", "logarithmic", "exponential", "mesh_like", or "custom"
+    points: Optional[int] = None             # Number of discrete nodes (required for uniform/log/exp)
+    value: Optional[float] = None            # Geometric multiplier factor (required for mesh_like spacing)
+    custom_vector: List[float] = field(default_factory=list) # Explicit coordinate array (required if type == "custom")
 
 @dataclass(frozen=True)
 class SpaceProbeRegionConfig:
-    """Defines a 3D bounding box and internal spacing for spatial probes (snapshots)."""
-    x_bounds: List[float]        # [start_x, end_x]. If start==end, the axis is fixed.
+    """Defines a 3D bounding box and internal node distribution for spatial probes (volumetric snapshots)."""
+    x_bounds: List[float]        # [start_x, end_x]. If start == end, the axis collapses to a 2D plane.
     y_bounds: List[float]        # [start_y, end_y]
     z_bounds: List[float]        # [start_z, end_z]
-    x_spacing: Spacing1DConfig   # Point distribution rule for X
-    y_spacing: Spacing1DConfig   # Point distribution rule for Y
-    z_spacing: Spacing1DConfig   # Point distribution rule for Z
+    x_spacing: Spacing1DConfig   # Point distribution rule applied along the X-axis
+    y_spacing: Spacing1DConfig   # Point distribution rule applied along the Y-axis
+    z_spacing: Spacing1DConfig   # Point distribution rule applied along the Z-axis
 
 @dataclass(frozen=True)
 class TimeProbeRegionConfig:
-    """Defines spatial bounds and explicit Z-planes for high-frequency time probes."""
+    """Defines spatial bounds and explicit Z-planes for high-frequency pointcloud probes."""
     x_bounds: List[float]
     y_bounds: List[float]
-    z_planes: List[float]        # Explicit list of Z coordinates where the 2D grid will be cloned
+    z_planes: List[float]        # Explicit list of discrete Z-coordinates where the 2D (X, Y) grid will be duplicated
     x_spacing: Spacing1DConfig
     y_spacing: Spacing1DConfig
 
 @dataclass(frozen=True)
 class IOAndProbesConfig:
-    """Master controller for simulation outputs and sensor intervals."""
+    """Master controller scheduling simulation I/O operations and sensor extraction frequencies."""
     check_interval_steps: int
     image_interval_steps: int
     space_probes_write_interval: int
@@ -134,14 +134,14 @@ class IOAndProbesConfig:
 @dataclass(frozen=True)
 class SimulationState:
     """
-    Master data container for the current simulation configuration.
-    This object is passed to all other modules (Physics, Mesh, Templates)
-    to serve as the single source of truth.
+    Master data container encapsulating the entire simulation configuration.
+    This centralized object is injected into all downstream modules (Physics, Mesh, Templates)
+    to serve as the strict single source of truth.
     """
     identity: IdentityConfig
     geometry: GeometryConfig
     domain_sizing: DomainSizingConfig
-    mesh_control: MeshControlConfig          # <-- DEVE ESTAR AQUI
+    mesh_control: MeshControlConfig
     flow_physics: FlowPhysicsConfig
     boundary_layer_setup: BoundaryLayerSetupConfig
     boundary_conditions: BoundaryConditionsConfig
@@ -151,36 +151,37 @@ class SimulationState:
     @classmethod
     def from_yaml(cls, filepath: str) -> 'SimulationState':
         """
-        Loads the YAML file, validates edge cases (like 2D assumptions),
-        and strongly types every parameter into nested dataclasses.
+        Loads the YAML configuration file, validates physical edge cases 
+        (e.g., quasi-2D domain constraints), and securely maps every parameter 
+        into nested, immutable dataclasses.
         """
-        # Open and load the YAML file into a standard Python dictionary
+        # Read the raw YAML configuration
         with open(filepath, 'r') as file:
             raw_data = yaml.safe_load(file)
 
-        # Map simple top-level dictionaries to their respective dataclasses
+        # Instantiate simple top-level configurations
         identity = IdentityConfig(**raw_data.get('identity', {}))
         
-        # Geometry Processing (Includes automated Quasi-2D validation)
+        # Process Geometry and enforce quasi-2D safeguards if span is absent
         geom_dict = raw_data.get('geometry', {})
         if geom_dict.get('domain_z', 0.0) == 0.0:
-            print("[INFO] domain_z is set to 0.0. Processing as a quasi-2D simulation setup.")
+            print("[INFO] ConfigParser: 'domain_z' is set to 0.0. Applying quasi-2D simulation constraints.")
         geometry = GeometryConfig(**geom_dict)
         
-        # Load mid-level dictionaries
+        # Instantiate mid-level configurations
         domain_sizing = DomainSizingConfig(**raw_data.get('domain_sizing', {}))
-        mesh_control = MeshControlConfig(**raw_data.get('mesh_control', {})) # <-- CORRIGIDO AQUI
+        mesh_control = MeshControlConfig(**raw_data.get('mesh_control', {}))
         flow_physics = FlowPhysicsConfig(**raw_data.get('flow_physics', {}))
         boundary_layer_setup = BoundaryLayerSetupConfig(**raw_data.get('boundary_layer_setup', {}))
         boundary_conditions = BoundaryConditionsConfig(**raw_data.get('boundary_conditions', {}))
         simulation_control = SimulationControlConfig(**raw_data.get('simulation_control', {}))
         
         # ---------------------------------------------------------------------
-        # Unpacking Nested Probe Configurations
+        # Deep Unpacking for Nested Probe Configurations
         # ---------------------------------------------------------------------
         io_data = raw_data.get('io_and_probes', {})
         
-        # Parse Space Probes
+        # Map Space Probes
         space_probes_parsed = {}
         for region_name, p_data in io_data.get('space_probes', {}).items():
             space_probes_parsed[region_name] = SpaceProbeRegionConfig(
@@ -192,7 +193,7 @@ class SimulationState:
                 z_spacing=Spacing1DConfig(**p_data.get('z_spacing', {}))
             )
             
-        # Parse Time Probes
+        # Map Time Probes
         time_probes_parsed = {}
         for region_name, p_data in io_data.get('time_probes', {}).items():
             time_probes_parsed[region_name] = TimeProbeRegionConfig(
@@ -203,7 +204,7 @@ class SimulationState:
                 y_spacing=Spacing1DConfig(**p_data.get('y_spacing', {}))
             )
 
-        # Consolidate IO and Probes
+        # Consolidate IO operations
         io_and_probes = IOAndProbesConfig(
             check_interval_steps=io_data.get('check_interval_steps', 1000),
             image_interval_steps=io_data.get('image_interval_steps', 3000),
@@ -213,12 +214,12 @@ class SimulationState:
             time_probes=time_probes_parsed
         )
 
-        # Return the fully constructed, immutable master state
+        # Return the securely constructed master state
         return cls(
             identity=identity,
             geometry=geometry,
             domain_sizing=domain_sizing,
-            mesh_control=mesh_control,       # <-- CORRIGIDO AQUI
+            mesh_control=mesh_control,
             flow_physics=flow_physics,
             boundary_layer_setup=boundary_layer_setup,
             boundary_conditions=boundary_conditions,

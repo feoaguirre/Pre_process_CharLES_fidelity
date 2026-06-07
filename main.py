@@ -1,11 +1,15 @@
 """
-Main entry point for the CharLES Pre-Processing Pipeline.
+Module: main.py
+Description: Main entry point for the CharLES Pre-Processing Pipeline.
+             Orchestrates the execution sequence: Configuration Parsing -> 
+             Physics Calculation -> Mesh Discretization Planning -> 
+             Probe Generation -> Template Writing.
 """
 import os
 import sys
 import argparse
 
-# Clean and professional imports using the new __init__.py API
+# Clean and professional imports using the centralized __init__.py API
 from core import (
     SimulationState,
     PhysicsEngine,
@@ -15,17 +19,21 @@ from core import (
 )
 
 def parse_args():
-    """Parses command line arguments."""
+    """Parses command line arguments enforcing the requirement of a configuration YAML."""
     parser = argparse.ArgumentParser(description="CharLES CFD Pre-Processing Pipeline")
     parser.add_argument(
         "--config", 
         type=str, 
         required=True, 
-        help="Path to the simulation configuration YAML file."
+        help="Path to the master simulation configuration YAML file."
     )
     return parser.parse_args()
 
 def main():
+    """
+    Executes the linear pipeline sequence, guaranteeing data immutability 
+    between steps and safe translation of fluid physics to HPC deployment scripts.
+    """
     print("=======================================================")
     print("      CharLES Pre-Processing Pipeline Initialized      ")
     print("=======================================================")
@@ -34,43 +42,43 @@ def main():
     yaml_path = args.config
 
     if not os.path.exists(yaml_path):
-        print(f"[ERROR] Configuration file not found at {yaml_path}")
+        print(f"[ERROR] Configuration file not found at: {yaml_path}")
         sys.exit(1)
 
     try:
         # 1. Parse Configuration
         print("[1/5] Loading and validating configuration...")
         state = SimulationState.from_yaml(yaml_path)
-        print(f"      -> Run Name: {state.identity.run_name} | Solver: {state.identity.solver_type}")
+        print(f"      -> Run Name: {state.identity.run_name} | Target Solver: {state.identity.solver_type}")
 
         # 2. Compute Fluid Physics and Domain Sizing
-        print("[2/5] Calculating fluid properties and domain sizing...")
+        print("[2/5] Calculating physical flow properties and domain boundaries...")
         physics_engine = PhysicsEngine(state)
         physics_state = physics_engine.calculate_derived_properties()
 
         # 3. Calculate Mesh Resolution for Stitch
-        print("[3/5] Planning Voronoi mesh parameters...")
+        print("[3/5] Planning Voronoi octree discretization parameters...")
         mesh_planner = MeshPlanner(state, physics_state)
         mesh_state = mesh_planner.calculate_mesh_parameters()
 
         # 4. Generate Spatial and Temporal Probes
-        print("[4/5] Generating spatial and temporal probe clouds...")
+        print("[4/5] Generating spatial and temporal point cloud coordinate matrices...")
         probe_gen = ProbeGenerator(state, physics_state)
         probe_gen.execute()
 
         # 5. Write Templates and Finalize Directory
-        print("[5/5] Injecting variables into CharLES templates...")
+        print("[5/5] Injecting variables into HPC CharLES execution templates...")
         writer = TemplateWriter(state, physics_state, mesh_state, template_dir="templates")
         writer.execute()
 
         print("=======================================================")
-        print(f"[SUCCESS] Simulation setup complete!")
-        print(f"Output directory: output_simulations/{state.identity.run_name}/")
-        print("Ready to transfer to Zeus.")
+        print(f"[SUCCESS] Simulation architecture fully generated!")
+        print(f"Output directory initialized at: output_simulations/{state.identity.run_name}/")
+        print("Ready for deployment to the HPC cluster.")
         print("=======================================================")
 
     except Exception as e:
-        print(f"\n[FATAL ERROR] Pipeline failed: {e}")
+        print(f"\n[FATAL ERROR] Pipeline execution halted: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

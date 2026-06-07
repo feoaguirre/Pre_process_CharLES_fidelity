@@ -1,12 +1,13 @@
 """
 Module: template_writer
 Description: 
-    Responsável pela injeção segura de parâmetros calculados nos templates (.in e .sh).
-    Evita o uso de bibliotecas de template nativas para prevenir conflitos de sintaxe
-    com variáveis de ambiente do cluster (PBS) e variáveis internas do CharLES.
+    Responsible for the secure injection of calculated physical and structural 
+    parameters into the solver templates (.in and .sh).
     
-    Gerencia a hierarquia de diretórios de saída e a alocação dinâmica de hardware
-    baseada nas filas configuradas em 'templates/queues.yaml'.
+    Bypasses native template libraries (like Jinja) to prevent syntax conflicts 
+    with HPC cluster environment variables (PBS) and CharLES internal commands.
+    Manages the output directory hierarchy and dynamically allocates hardware 
+    resources based on the cluster queues defined in 'templates/queues.yaml'.
 """
 
 import os
@@ -15,8 +16,19 @@ import yaml
 from typing import Any, Dict
 
 class TemplateWriter:
+    """
+    Translates the calculated simulation states into executable CharLES scripts,
+    enforcing strict syntax rules and cluster compatibility.
+    """
     
     def __init__(self, state: Any, physics_state: Any, mesh_state: Any, template_dir: str = "templates"):
+        """
+        Args:
+            state: SimulationState (parsed securely from YAML)
+            physics_state: PhysicsState (computed fluid mechanics properties)
+            mesh_state: MeshState (computed Voronoi octree discretization parameters)
+            template_dir: Path to the directory containing base .in and .sh templates
+        """
         self.state = state
         self.physics = physics_state
         self.mesh = mesh_state
@@ -24,31 +36,31 @@ class TemplateWriter:
         self.run_name = self.state.identity.run_name
         self.output_dir = os.path.join("output_simulations", self.run_name)
         
-        # Carrega a definição de filas/hardware do cluster Zeus
+        # Load hardware/queue definitions for the HPC cluster
         self.queues_path = os.path.join(self.template_dir, "queues.yaml")
         self.queue_data = self._load_queues()
         
-        # Cria o dicionário de mapeamento para substituição de tokens
+        # Build the master dictionary for token replacement
         self.replacements = self._build_replacement_dict()
 
     def _load_queues(self) -> Dict[str, Any]:
-        """Carrega configurações de hardware das filas HPC."""
+        """Loads HPC hardware configurations from the queues YAML file."""
         if not os.path.exists(self.queues_path):
-            raise FileNotFoundError(f"[ERROR] Arquivo de filas não encontrado em {self.queues_path}")
+            raise FileNotFoundError(f"[ERROR] Queue configuration file not found at {self.queues_path}")
         with open(self.queues_path, 'r') as file:
             return yaml.safe_load(file)
 
     def _build_replacement_dict(self) -> Dict[str, Any]:
         """
-        Constrói um mapeamento (chave -> valor) entre os tokens esperados nos 
-        arquivos .in e os dados calculados pelo framework.
+        Constructs a key-value mapping between the DEFINE tokens expected in the 
+        .in templates and the physical/numerical data calculated by the framework.
         """
         phys = self.state.flow_physics
         geom = self.state.geometry
         ctrl = self.state.simulation_control
         io = self.state.io_and_probes
         
-        # Formata a string de condição de contorno da parede para a sintaxe estrita do CharLES
+        # Format the thermal boundary condition to match strict CharLES syntax
         raw_wall_bc = self.state.boundary_conditions.wall_bc.upper()
         wall_t = getattr(self.state.boundary_conditions, 'wall_T', 1.0)
         
@@ -59,19 +71,19 @@ class TemplateWriter:
         else:
             formatted_wall_bc = raw_wall_bc
             
-        # Cálculo de Comprimento Total e Conversão de FTT para Tempo Adimensional
+        # Calculate Total Domain Length and convert user FTTs to Adimensional Simulation Time
         total_domain_length = self.physics.pregap_slip_length + self.physics.pregap_noslip_length + geom.structure_length + self.physics.postgap_length
         u_inf = phys.inflow_u
         
-        # 1 FTT = Tempo necessário para o escoamento cruzar todo o domínio
+        # 1 Flow-Through Time (FTT) = Time required for the freestream to traverse the entire domain
         ftt_duration = total_domain_length / u_inf
         
-        # Conversão dos tempos do YAML (em FTT) para tempo de simulação do CharLES
+        # Convert user-defined YAML FTT limits into actual CharLES solver time
         actual_transient_time = ctrl.transient_simtime_ftt * ftt_duration
         actual_steady_time = ctrl.steady_simtime_ftt * ftt_duration
         
         return {
-            # --- Parâmetros Geométricos ---
+            # --- Geometric Parameters ---
             "L": geom.structure_length,
             "D": geom.structure_depth,
             "HALF_W": self.mesh.half_w,
@@ -81,14 +93,14 @@ class TemplateWriter:
             "H": self.physics.domain_height,
             "TOTAL_DOMAIN_LENGTH": total_domain_length,
             
-            # --- Parâmetros de Malha (Stitch) ---
+            # --- Volumetric Mesh Parameters (Stitch) ---
             "HCP_DELTA_VAL": self.mesh.hcp_delta,
             "MAX_REFINEMENT_LEVEL": self.mesh.max_refinement_level,
             "NLAYERS_VAL": self.mesh.nlayers,
             "NSMOOTH_VAL": self.mesh.nsmooth,
             "REFINEMENT_HEIGHT_ABOVE_PLATE": self.mesh.refinement_height,
             
-            # --- Parâmetros de Física de Escoamento ---
+            # --- Freestream Fluid Physics ---
             "RE_DELTA_STAR": phys.target_reynolds,
             "MACH": phys.mach_number,
             "U_INF": phys.inflow_u,
@@ -98,23 +110,24 @@ class TemplateWriter:
             "PR_LAM_VAL": phys.prandtl,
             "MU_POWER_LAW_VAL": phys.mu_power_law,
             
-            # --- Condições de Contorno e Solver ---
+            # --- Boundary Conditions & Solver Paradigms ---
             "WALL_BC": formatted_wall_bc,
             "SGS_MODEL_VAL": "NONE" if self.state.identity.solver_type.upper() == "DNS" else "VREMAN",
             
-            # --- Controle de Simulação (Agora convertidos de FTT para tempo real) ---
+            # --- Simulation Control (Converted from FTT to non-dimensional time) ---
             "TRANSIENT_SIMTIME_VAL": round(actual_transient_time, 4),
             "STEADY_SIMTIME_VAL": round(actual_steady_time, 4),
             "CFL_VAL": ctrl.cfl,
             
-            # --- Intervalos de Escrita (IO) ---
+            # --- I/O and Data Extraction Intervals ---
             "CHECK_INTERVAL_VAL": io.check_interval_steps,
             "IMAGE_WRITE_INTERVAL": io.image_interval_steps,
             "SPACE_PROBES_WRITE_INTERVAL": io.space_probes_write_interval,
             "TIME_PROBES_WRITE_INTERVAL": io.time_probes_write_interval
         }
+
     def _setup_directories(self):
-        """Cria a estrutura de pastas necessária para os resultados da simulação."""
+        """Builds the strict directory hierarchy required for simulation results."""
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(os.path.join(self.output_dir, "helping_files"), exist_ok=True)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
@@ -123,14 +136,17 @@ class TemplateWriter:
         os.makedirs(os.path.join(self.output_dir, "probe_coordinates"), exist_ok=True)
 
     def _generate_probe_lines(self) -> str:
-        """Gera o bloco de texto padronizado usando POINTCLOUD_PROBE para evitar memory leak no solver."""
+        """
+        Generates the standardized POINTCLOUD_PROBE command blocks.
+        Enforces the use of pointclouds to fundamentally prevent native solver memory leaks.
+        """
         lines = []
         io = self.state.io_and_probes
         
-        # Variáveis exclusivas para as Time Probes (apenas instantâneas, conforme solicitado)
+        # Variables extracted for high-frequency Time Probes (Instantaneous fields only)
         time_vars = "comp(u,0) comp(u,1) comp(u,2) p rho T"
         
-        # Variáveis para as Space Probes (instantâneas + médias temporais)
+        # Variables extracted for low-frequency Space Probes (Instantaneous + Statistical Averages)
         space_vars = "comp(u,0) comp(u,1) comp(u,2) p rho T comp(avg(u),0) comp(avg(u),1) comp(avg(u),2) avg(p) avg(rho) avg(T)"
         
         # --- SPACE PROBES ---
@@ -151,22 +167,22 @@ class TemplateWriter:
             csv_path = f"probe_coordinates/TimeProbe_{name}.csv"
             interval = io.time_probes_write_interval
             
-            # Alterado obrigatoriamente para POINTCLOUD_PROBE
+            # Mandatorily uses POINTCLOUD_PROBE for hardware stability
             lines.append(f"POINTCLOUD_PROBE NAME=./results/time_probes/{name}/data INTERVAL {interval} GEOM=FILE {csv_path} VARS={time_vars}")
             
         return "\n".join(lines)
     
     def _process_in_file(self, template_path: str, output_name: str):
-        """Lê um template .in, injeta variáveis 'DEFINE' e expande blocos dinâmicos."""
+        """Reads a CharLES .in template, safely injects DEFINE variables, and expands probe blocks."""
         output_path = os.path.join(self.output_dir, output_name)
         with open(template_path, 'r') as infile, open(output_path, 'w') as outfile:
             for line in infile:
-                # 1. Expandir bloco dinâmico de sondas
+                # 1. Expand dynamic probe block
                 if "{{PROBES_INJECTION}}" in line:
                     outfile.write(self._generate_probe_lines() + "\n")
                     continue
                 
-                # 2. Injeção de variáveis DEFINE
+                # 2. Inject mapped DEFINE variables
                 if line.startswith("DEFINE "):
                     parts = line.split("=")
                     if len(parts) == 2:
@@ -176,28 +192,32 @@ class TemplateWriter:
                             outfile.write(f"DEFINE {var_name} = {val}\n")
                             continue
                 outfile.write(line)
-        print(f"[INFO] Gerado arquivo de entrada: {output_name}")
+        print(f"[INFO] Generated input script: {output_name}")
 
     def _process_sh_file(self, template_path: str, output_name: str, step_name: str):
-        """Processa scripts PBS, injetando o nome do job, a fila correta e recursos."""
+        """Processes PBS bash scripts, injecting the correct job name, cluster queue, and core counts."""
         output_path = os.path.join(self.output_dir, output_name)
         job_name = f"{self.run_name}_{step_name}"
         
         q_name = self.state.simulation_control.pbs_queue
         if q_name not in self.queue_data:
-            raise ValueError(f"[ERROR] Fila '{q_name}' não definida em queues.yaml!")
+            raise ValueError(f"[ERROR] Queue '{q_name}' is not defined in queues.yaml!")
             
         max_cores = self.queue_data[q_name]['ncpus']
         
         with open(template_path, 'r') as infile, open(output_path, 'w') as outfile:
             for line in infile:
+                # Inject PBS Job Name
                 if line.startswith("#PBS -N"):
                     outfile.write(f"#PBS -N {job_name}\n")
                     continue
+                
+                # Inject PBS Queue Designation
                 if line.startswith("#PBS -q"):
                     outfile.write(f"#PBS -q {q_name}\n")
                     continue
                 
+                # Dynamically allocate MPI constraints based on yaml definitions
                 if step_name in ["steady", "transient"]:
                     if line.startswith("#PBS -l select="):
                         outfile.write(f"#PBS -l select=1:ncpus={max_cores}:mpiprocs={max_cores}\n")
@@ -209,12 +229,13 @@ class TemplateWriter:
                         continue
                 outfile.write(line)
         
+        # Grant executable permissions to the generated bash script
         os.chmod(output_path, 0o755)
-        print(f"[INFO] Gerado script bash: {output_name} (Fila: {q_name})")
+        print(f"[INFO] Generated bash script: {output_name} (Allocated Queue: {q_name})")
 
     def execute(self):
-        """Método principal para executar o processamento de todos os templates."""
-        print("--- Gerando Arquivos de Simulação ---")
+        """Main orchestrator executing the translation of all base templates into run-ready scripts."""
+        print("--- Generating Simulation Files ---")
         self._setup_directories()
         
         in_files = {
@@ -237,13 +258,13 @@ class TemplateWriter:
             if os.path.exists(tpl_path):
                 self._process_in_file(tpl_path, out_file)
             else:
-                print(f"[WARNING] Template {tpl_file} não encontrado")
+                print(f"[WARNING] Template {tpl_file} not found in {self.template_dir}")
 
         for tpl_file, (out_file, step_name) in sh_files.items():
             tpl_path = os.path.join(self.template_dir, tpl_file)
             if os.path.exists(tpl_path):
                 self._process_sh_file(tpl_path, out_file, step_name)
             else:
-                print(f"[WARNING] Template {tpl_file} não encontrado")
+                print(f"[WARNING] Template {tpl_file} not found in {self.template_dir}")
 
-        print(f"--- Setup de Simulação Finalizado: {self.run_name} ---")
+        print(f"--- Simulation Setup Complete: {self.run_name} ---")
