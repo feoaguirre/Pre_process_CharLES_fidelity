@@ -26,7 +26,7 @@ This repository contains a robust, automated Python-based framework designed to 
 
 ## 📂 Project Structure
 
-Ensure the working directory strictly follows this hierarchy:
+```Ensure the working directory strictly follows this hierarchy:
 
 ├── core/
 │   ├── config_parser.py          # YAML architecture and strict logic typing
@@ -42,7 +42,7 @@ Ensure the working directory strictly follows this hierarchy:
 ├── configs/
 │   └── simulation_config.yaml    # Master control file (User Input)
 └── run_preprocess.py             # Main pipeline initialization script
-
+```
 
 ## ⚙️ Execution Workflow
 
