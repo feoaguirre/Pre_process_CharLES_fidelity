@@ -1,0 +1,64 @@
+# ==============================================================================
+# CharLES Unified Simulation Template
+# ==============================================================================
+
+# Defining parameters for fluid properties
+DEFINE TOTAL_DOMAIN_LENGTH = 431.0013881872036
+DEFINE P_INF = (1.0*1.0*1.0*1.0/(1.4*6.0*6.0))
+DEFINE MU_INF = (1.0*1.0*1.0/3000.0)
+
+# Restart files
+RESTART ./helping_files/restart.mles
+
+# Setting reference values (flow properties at inf)
+PR_LAM = 0.72
+MU_POWER_LAW = 0.95
+RHO_REF = 1.0
+P_REF = (1.0*1.0*1.0*1.0/(1.4*6.0*6.0))
+T_REF = 1.0
+MU_REF = (1.0*1.0*1.0/3000.0)
+GAMMA = 1.4
+EOS = IDEAL_GAS
+
+# Time advancement
+TIMESTEP = CFL 0.8
+SIMTIME = 86200.2776
+CHECK_INTERVAL = 1000
+
+# Wall modeling
+SGS_MODEL = NONE
+
+# Initialization (Transient only)
+INIT_RUP 1.0 0 0 0 (1.0*1.0*1.0*1.0/(1.4*6.0*6.0))
+
+# Boundary conditions
+INFLOW = CBC_RUP 1.0 1.0 0.0 0.0 (1.0*1.0*1.0*1.0/(1.4*6.0*6.0))
+OUTFLOW = NSCBC_OUTLET_PRESSURE P_REF (1.0*1.0*1.0*1.0/(1.4*6.0*6.0)) L_REF 431.0013881872036
+TOP = NSCBC_OUTLET_PRESSURE P_REF (1.0*1.0*1.0*1.0/(1.4*6.0*6.0)) L_REF 431.0013881872036
+RIGHT = SLIP
+LEFT = SLIP
+PREGAP_SLIP = SLIP
+SOLIDS = WALL_ISOTHERMAL T_WALL 1.0
+
+# Collecting temporal statistics of data
+STATS = u p rho T
+
+# ------------------------------------------------------------------------------
+# Probes Configuration
+# ------------------------------------------------------------------------------
+POINTCLOUD_PROBE NAME=./results/space_probes/gap_shear_layer/data INTERVAL 4000 GEOM=FILE probe_coordinates/SpaceProbe_gap_shear_layer.csv VARS=comp(u,0) comp(u,1) p rho comp(avg(u),0) avg(p)
+POINTCLOUD_PROBE NAME=./results/time_probes/shear_layer_signal/data INTERVAL 1000 GEOM=FILE probe_coordinates/TimeProbe_shear_layer_signal.csv VARS=comp(u,0) comp(u,1) p rho
+POINTCLOUD_PROBE NAME=./results/cf_probes/pregap_wall_friction/data INTERVAL 50000 GEOM=FILE probe_coordinates/CfProbe_pregap_wall_friction.csv VARS=comp(u,0) p rho T
+POINTCLOUD_PROBE NAME=./results/boundary_layer_probes/pregap_bl_development/data INTERVAL 50000 GEOM=FILE probe_coordinates/BLProbe_pregap_bl_development.csv VARS=comp(u,0) p rho T
+POINTCLOUD_PROBE NAME=./results/large_data_probes/spod_shear_layer_block/data INTERVAL 100000 GEOM=FILE probe_coordinates/LargeData_spod_shear_layer_block.csv VARS=comp(u,0) comp(u,1) p rho
+
+# Conditional Y+ Probe
+CONDITIONAL_PROBE NAME=./results/y_plus/y_plus WRITE_INTERVAL 1000 SAMPLE_INTERVAL 1 CVAR comp(SOLIDS:x_bf,0) NBIN 2000 VARS SOLIDS:y_plus()
+
+# ------------------------------------------------------------------------------
+# Image Generation
+# ------------------------------------------------------------------------------
+WRITE_IMAGE NAME=./results/images/v_velocity INTERVAL 10000 GEOM=Z_PLANE_FRAC 0.5 VAR=comp(u,1) SIZE 4000 4000 UP=0 1 0
+WRITE_IMAGE NAME=./results/images/dilatation INTERVAL 10000 GEOM=Z_PLANE_FRAC 0.5 VAR=div(u) SIZE 4000 4000 UP=0 1 0
+WRITE_IMAGE NAME=./results/images/density INTERVAL 10000 GEOM=Z_PLANE_FRAC 0.5 VAR=rho SIZE 4000 4000 UP=0 1 0
+WRITE_IMAGE NAME=./results/images/temperature INTERVAL 20000 GEOM=Z_PLANE_FRAC 0.5 VAR=T SIZE 4000 4000 UP=0 1 0

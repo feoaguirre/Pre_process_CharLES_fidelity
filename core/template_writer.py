@@ -2,12 +2,11 @@
 Module: template_writer
 Description: 
     Responsible for the secure injection of calculated physical and structural 
-    parameters into the solver templates (.in and .sh).
+    parameters into the unified solver template (.in) and batch scripts (.sh).
     
-    Bypasses native template libraries (like Jinja) to prevent syntax conflicts 
-    with HPC cluster environment variables (PBS) and CharLES internal commands.
-    Manages the output directory hierarchy and dynamically allocates hardware 
-    resources based on the cluster queues defined in 'templates/queues.yaml'.
+    Dynamically maps Space, Time, Mean Flow (Cf/BL), and Large Data (SPOD) 
+    probes. It parses the unified template twice (Transient and Steady) to inject
+    phase-specific simulation times, restart logic, and extraction intervals.
 """
 
 import os
@@ -22,13 +21,6 @@ class TemplateWriter:
     """
     
     def __init__(self, state: Any, physics_state: Any, mesh_state: Any, template_dir: str = "templates"):
-        """
-        Args:
-            state: SimulationState (parsed securely from YAML)
-            physics_state: PhysicsState (computed fluid mechanics properties)
-            mesh_state: MeshState (computed Voronoi octree discretization parameters)
-            template_dir: Path to the directory containing base .in and .sh templates
-        """
         self.state = state
         self.physics = physics_state
         self.mesh = mesh_state
@@ -36,12 +28,8 @@ class TemplateWriter:
         self.run_name = self.state.identity.run_name
         self.output_dir = os.path.join("output_simulations", self.run_name)
         
-        # Load hardware/queue definitions for the HPC cluster
         self.queues_path = os.path.join(self.template_dir, "queues.yaml")
         self.queue_data = self._load_queues()
-        
-        # Build the master dictionary for token replacement
-        self.replacements = self._build_replacement_dict()
 
     def _load_queues(self) -> Dict[str, Any]:
         """Loads HPC hardware configurations from the queues YAML file."""
@@ -50,40 +38,56 @@ class TemplateWriter:
         with open(self.queues_path, 'r') as file:
             return yaml.safe_load(file)
 
-    def _build_replacement_dict(self) -> Dict[str, Any]:
-        """
-        Constructs a key-value mapping between the DEFINE tokens expected in the 
-        .in templates and the physical/numerical data calculated by the framework.
-        """
+    def _build_replacement_dict(self, step: str) -> Dict[str, Any]:
         phys = self.state.flow_physics
         geom = self.state.geometry
         ctrl = self.state.simulation_control
         io = self.state.io_and_probes
         
-        # Format the thermal boundary condition to match strict CharLES syntax
+        # Thermal boundary condition string formatting (strictly obeying user input)
         raw_wall_bc = self.state.boundary_conditions.wall_bc.upper()
         wall_t = getattr(self.state.boundary_conditions, 'wall_T', 1.0)
-        
-        if raw_wall_bc == "ISOTHERMAL":
-            formatted_wall_bc = f"WALL_ISOTHERMAL T_WALL {wall_t}"
-        elif raw_wall_bc == "ADIABATIC":
-            formatted_wall_bc = "WALL_ADIABATIC"
-        else:
-            formatted_wall_bc = raw_wall_bc
+        formatted_wall_bc = f"WALL_ISOTHERMAL T_WALL {wall_t}" if raw_wall_bc == "ISOTHERMAL" else ("WALL_ADIABATIC" if raw_wall_bc == "ADIABATIC" else raw_wall_bc)
             
-        # Calculate Total Domain Length and convert user FTTs to Adimensional Simulation Time
+        # Total Domain Length & Adimensional Simulation Time 
         total_domain_length = self.physics.pregap_slip_length + self.physics.pregap_noslip_length + geom.structure_length + self.physics.postgap_length
-        u_inf = phys.inflow_u
+        ftt_duration = total_domain_length / phys.inflow_u
         
-        # 1 Flow-Through Time (FTT) = Time required for the freestream to traverse the entire domain
-        ftt_duration = total_domain_length / u_inf
-        
-        # Convert user-defined YAML FTT limits into actual CharLES solver time
-        actual_transient_time = ctrl.transient_simtime_ftt * ftt_duration
-        actual_steady_time = ctrl.steady_simtime_ftt * ftt_duration
-        
+        # Phase-Specific Logic (Transient vs Steady)
+        if step == "transient":
+            simtime = ctrl.transient_simtime_ftt * ftt_duration
+            restart_cmd = "RESTART ./helping_files/restart.mles"
+            p_inf_calc = f"({phys.inflow_u}*{phys.inflow_u}*{phys.inflow_rho}*1.0/({phys.gamma}*{phys.mach_number}*{phys.mach_number}))"
+            init_cmd = f"INIT_RUP {phys.inflow_rho} 0 0 0 {p_inf_calc}"
+        else:
+            simtime = ctrl.steady_simtime_ftt * ftt_duration
+            restart_cmd = "RESTART ./helping_files/restart.mles sles"
+            init_cmd = "# Flow already developed. Initialization bypassed in steady state."
+
         return {
-            # --- Geometric Parameters ---
+            "TOTAL_DOMAIN_LENGTH": total_domain_length,
+            "P_INF": f"({phys.inflow_u}*{phys.inflow_u}*{phys.inflow_rho}*1.0/({phys.gamma}*{phys.mach_number}*{phys.mach_number}))",
+            "MU_INF": f"({phys.inflow_rho}*{phys.inflow_u}*1.0/{phys.target_reynolds})",
+            "RESTART_CMD": restart_cmd,
+            "PR_LAM_VAL": phys.prandtl,
+            "MU_POWER_LAW_VAL": phys.mu_power_law,
+            "RHO_INF": phys.inflow_rho,
+            "T_INF": phys.inflow_T,
+            "U_INF": phys.inflow_u,
+            "G": phys.gamma,
+            "CFL_VAL": ctrl.cfl,
+            "SIMTIME_VAL": round(simtime, 4),
+            "CHECK_INTERVAL_VAL": io.check_interval_steps,
+            "SGS_MODEL_VAL": self.state.identity.sgs_model.upper(),
+            "INIT_CMD": init_cmd,
+            "WALL_BC": formatted_wall_bc,
+            
+            # Legacy Stitch Replacements
+            "HCP_DELTA_VAL": self.mesh.hcp_delta,
+            "MAX_REFINEMENT_LEVEL": self.mesh.max_refinement_level,
+            "NLAYERS_VAL": self.mesh.nlayers,
+            "NSMOOTH_VAL": self.mesh.nsmooth,
+            "REFINEMENT_HEIGHT_ABOVE_PLATE": self.mesh.refinement_height,
             "L": geom.structure_length,
             "D": geom.structure_depth,
             "HALF_W": self.mesh.half_w,
@@ -91,106 +95,108 @@ class TemplateWriter:
             "L2": self.physics.pregap_noslip_length,
             "L3": self.physics.postgap_length,
             "H": self.physics.domain_height,
-            "TOTAL_DOMAIN_LENGTH": total_domain_length,
-            
-            # --- Volumetric Mesh Parameters (Stitch) ---
-            "HCP_DELTA_VAL": self.mesh.hcp_delta,
-            "MAX_REFINEMENT_LEVEL": self.mesh.max_refinement_level,
-            "NLAYERS_VAL": self.mesh.nlayers,
-            "NSMOOTH_VAL": self.mesh.nsmooth,
-            "REFINEMENT_HEIGHT_ABOVE_PLATE": self.mesh.refinement_height,
-            
-            # --- Freestream Fluid Physics ---
-            "RE_DELTA_STAR": phys.target_reynolds,
-            "MACH": phys.mach_number,
-            "U_INF": phys.inflow_u,
-            "RHO_INF": phys.inflow_rho,
-            "T_INF": phys.inflow_T,
-            "G": phys.gamma,
-            "PR_LAM_VAL": phys.prandtl,
-            "MU_POWER_LAW_VAL": phys.mu_power_law,
-            
-            # --- Boundary Conditions & Solver Paradigms ---
-            "WALL_BC": formatted_wall_bc,
-            "SGS_MODEL_VAL": "NONE" if self.state.identity.solver_type.upper() == "DNS" else "VREMAN",
-            
-            # --- Simulation Control (Converted from FTT to non-dimensional time) ---
-            "TRANSIENT_SIMTIME_VAL": round(actual_transient_time, 4),
-            "STEADY_SIMTIME_VAL": round(actual_steady_time, 4),
-            "CFL_VAL": ctrl.cfl,
-            
-            # --- I/O and Data Extraction Intervals ---
-            "CHECK_INTERVAL_VAL": io.check_interval_steps,
-            "IMAGE_WRITE_INTERVAL": io.image_interval_steps,
-            "SPACE_PROBES_WRITE_INTERVAL": io.space_probes_write_interval,
-            "TIME_PROBES_WRITE_INTERVAL": io.time_probes_write_interval
         }
 
     def _setup_directories(self):
         """Builds the strict directory hierarchy required for simulation results."""
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "helping_files"), exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "results", "images"), exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "results", "mesh_images"), exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "probe_coordinates"), exist_ok=True)
+        dirs_to_create = [
+            "helping_files", "logs", "probe_coordinates",
+            "results/images", "results/mesh_images",
+            "results/space_probes", "results/time_probes",
+            "results/cf_probes", "results/boundary_layer_probes", 
+            "results/large_data_probes", "results/full_mesh"
+        ]
+        for directory in dirs_to_create:
+            os.makedirs(os.path.join(self.output_dir, directory), exist_ok=True)
 
-    def _generate_probe_lines(self) -> str:
+    def _generate_probe_lines(self, step: str) -> str:
         """
-        Generates the standardized POINTCLOUD_PROBE command blocks.
-        Enforces the use of pointclouds to fundamentally prevent native solver memory leaks.
+        Generates the standardized POINTCLOUD_PROBE command blocks for all categories.
+        Reads custom variables and independent writing intervals directly from the YAML.
         """
         lines = []
         io = self.state.io_and_probes
         
-        # Variables extracted for high-frequency Time Probes (Instantaneous fields only)
-        time_vars = "comp(u,0) comp(u,1) comp(u,2) p rho T"
+        def append_probe(registry: dict, category_name: str, prefix: str, is_large_data: bool = False):
+            for name, config in registry.items():
+                
+                # ========================================================
+                # CORREÇÃO: Criar as subpastas específicas de cada probe!
+                # ========================================================
+                probe_dir = os.path.join(self.output_dir, "results", category_name, name)
+                os.makedirs(probe_dir, exist_ok=True)
+                
+                csv_path = f"probe_coordinates/{prefix}_{name}.csv"
+                out_path = f"./results/{category_name}/{name}/data"
+                
+                # Assign interval based on probe type and simulation phase (Transient/Steady)
+                if is_large_data:
+                    interval = config.transient_write_interval if step == "transient" else config.steady_write_interval
+                else:
+                    interval = config.write_interval
+                
+                # Format variables explicitly requested by the user
+                vars_str = " ".join(config.variables)
+                lines.append(f"POINTCLOUD_PROBE NAME={out_path} INTERVAL {interval} GEOM=FILE {csv_path} VARS={vars_str}")
+
+        # Dispatch probe injection blocks
+        append_probe(io.space_probes, "space_probes", "SpaceProbe")
+        append_probe(io.time_probes, "time_probes", "TimeProbe")
+        append_probe(io.cf_probes, "cf_probes", "CfProbe")
+        append_probe(io.boundary_layer_probes, "boundary_layer_probes", "BLProbe")
+        append_probe(io.large_data_probes, "large_data_probes", "LargeData", is_large_data=True)
         
-        # Variables extracted for low-frequency Space Probes (Instantaneous + Statistical Averages)
-        space_vars = "comp(u,0) comp(u,1) comp(u,2) p rho T comp(avg(u),0) comp(avg(u),1) comp(avg(u),2) avg(p) avg(rho) avg(T)"
-        
-        # --- SPACE PROBES ---
-        for name in io.space_probes.keys():
-            probe_dir = os.path.join(self.output_dir, "results", "space_probes", name)
-            os.makedirs(probe_dir, exist_ok=True)
-            
-            csv_path = f"probe_coordinates/SpaceProbe_{name}.csv"
-            interval = io.space_probes_write_interval
-            
-            lines.append(f"POINTCLOUD_PROBE NAME=./results/space_probes/{name}/data INTERVAL {interval} GEOM=FILE {csv_path} VARS={space_vars}")
-            
-        # --- TIME PROBES ---
-        for name in io.time_probes.keys():
-            probe_dir = os.path.join(self.output_dir, "results", "time_probes", name)
-            os.makedirs(probe_dir, exist_ok=True)
-            
-            csv_path = f"probe_coordinates/TimeProbe_{name}.csv"
-            interval = io.time_probes_write_interval
-            
-            # Mandatorily uses POINTCLOUD_PROBE for hardware stability
-            lines.append(f"POINTCLOUD_PROBE NAME=./results/time_probes/{name}/data INTERVAL {interval} GEOM=FILE {csv_path} VARS={time_vars}")
+        # Inject Full Mesh Dump if enabled
+        if getattr(io, 'save_full_mesh', False):
+            lines.append(f"WRITE_DATA NAME=./results/full_mesh/domain INTERVAL {io.full_mesh_write_interval}")
             
         return "\n".join(lines)
+        
+    def _generate_image_lines(self) -> str:
+        """
+        Generates native WRITE_IMAGE blocks based on user-defined configurations.
+        Defaults the slice to the domain mid-plane (Z_PLANE_FRAC 0.5) to capture 2D physics.
+        """
+        lines = []
+        for name, config in self.state.io_and_probes.image_outputs.items():
+            out_path = f"./results/images/{name}"
+            lines.append(f"WRITE_IMAGE NAME={out_path} INTERVAL {config.write_interval} GEOM=Z_PLANE_FRAC 0.5 VAR={config.variable} SIZE 4000 4000 UP=0 1 0")
+        return "\n".join(lines)
     
-    def _process_in_file(self, template_path: str, output_name: str):
-        """Reads a CharLES .in template, safely injects DEFINE variables, and expands probe blocks."""
+    def _process_in_file(self, template_path: str, output_name: str, step: str = "generic"):
+        """Reads a CharLES .in template, safely injects variables, and expands dynamically generated blocks."""
         output_path = os.path.join(self.output_dir, output_name)
+        
+        # Fetch replacement mappings adapted to the current step (Transient/Steady)
+        replacements = self._build_replacement_dict(step)
+        
         with open(template_path, 'r') as infile, open(output_path, 'w') as outfile:
             for line in infile:
                 # 1. Expand dynamic probe block
                 if "{{PROBES_INJECTION}}" in line:
-                    outfile.write(self._generate_probe_lines() + "\n")
+                    outfile.write(self._generate_probe_lines(step) + "\n")
                     continue
                 
-                # 2. Inject mapped DEFINE variables
+                # 2. Expand dynamic image visualization block
+                if "{{IMAGES_INJECTION}}" in line:
+                    outfile.write(self._generate_image_lines() + "\n")
+                    continue
+                
+                # 3. Replace DEFINE macros
                 if line.startswith("DEFINE "):
                     parts = line.split("=")
                     if len(parts) == 2:
                         var_name = parts[0].replace("DEFINE", "").strip()
-                        if var_name in self.replacements:
-                            val = self.replacements[var_name]
+                        if var_name in replacements:
+                            val = replacements[var_name]
                             outfile.write(f"DEFINE {var_name} = {val}\n")
                             continue
+                
+                # 4. Replace dynamically injected $(CMD) macros
+                for key, val in replacements.items():
+                    if f"$({key})" in line:
+                        line = line.replace(f"$({key})", str(val))
+                        
                 outfile.write(line)
         print(f"[INFO] Generated input script: {output_name}")
 
@@ -207,17 +213,13 @@ class TemplateWriter:
         
         with open(template_path, 'r') as infile, open(output_path, 'w') as outfile:
             for line in infile:
-                # Inject PBS Job Name
                 if line.startswith("#PBS -N"):
                     outfile.write(f"#PBS -N {job_name}\n")
                     continue
-                
-                # Inject PBS Queue Designation
                 if line.startswith("#PBS -q"):
                     outfile.write(f"#PBS -q {q_name}\n")
                     continue
                 
-                # Dynamically allocate MPI constraints based on yaml definitions
                 if step_name in ["steady", "transient"]:
                     if line.startswith("#PBS -l select="):
                         outfile.write(f"#PBS -l select=1:ncpus={max_cores}:mpiprocs={max_cores}\n")
@@ -229,36 +231,38 @@ class TemplateWriter:
                         continue
                 outfile.write(line)
         
-        # Grant executable permissions to the generated bash script
         os.chmod(output_path, 0o755)
         print(f"[INFO] Generated bash script: {output_name} (Allocated Queue: {q_name})")
 
     def execute(self):
-        """Main orchestrator executing the translation of all base templates into run-ready scripts."""
+        """Main orchestrator executing the translation of templates into run-ready scripts."""
         print("--- Generating Simulation Files ---")
         self._setup_directories()
         
-        in_files = {
-            "template-surfer.in": "surfer.in",
-            "template-stitch.in": "stitch.in",
-            "template-transient_charles_ig.in": "transient_charles_ig.in",
-            "template-steady_charles_ig.in": "steady_charles_ig.in"
-        }
-        
+        # The writer pulls the unified template to build both the Transient and Steady files
+        unified_solver_template = os.path.join(self.template_dir, "template-charles.in")
+        stitch_template = os.path.join(self.template_dir, "template-stitch.in")
+        surfer_template = os.path.join(self.template_dir, "template-surfer.in")
+
+        if os.path.exists(unified_solver_template):
+            self._process_in_file(unified_solver_template, "transient_charles_ig.in", step="transient")
+            self._process_in_file(unified_solver_template, "steady_charles_ig.in", step="steady")
+        else:
+            print(f"[ERROR] Unified solver template not found at {unified_solver_template}")
+
+        if os.path.exists(stitch_template):
+            self._process_in_file(stitch_template, "stitch.in", step="generic")
+            
+        if os.path.exists(surfer_template):
+            self._process_in_file(surfer_template, "surfer.in", step="generic")
+
+        # Process PBS submission shell scripts (Standardized names without '_2')
         sh_files = {
             "template-run-surfer.sh": ("run-surfer.sh", "surfer"),
             "template-run-stitch.sh": ("run-stitch.sh", "stitch"),
             "template-run-transient-charles.sh": ("run-transient-charles.sh", "transient"),
-            "template-run-steady-charles.sh": ("run-steady-charles.sh", "steady"),
-            "template-move_logs.sh": ("move_logs.sh", "logs")
+            "template-run-steady-charles.sh": ("run-steady-charles.sh", "steady")
         }
-
-        for tpl_file, out_file in in_files.items():
-            tpl_path = os.path.join(self.template_dir, tpl_file)
-            if os.path.exists(tpl_path):
-                self._process_in_file(tpl_path, out_file)
-            else:
-                print(f"[WARNING] Template {tpl_file} not found in {self.template_dir}")
 
         for tpl_file, (out_file, step_name) in sh_files.items():
             tpl_path = os.path.join(self.template_dir, tpl_file)
