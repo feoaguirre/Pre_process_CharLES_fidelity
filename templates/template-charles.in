@@ -2,8 +2,47 @@
 # CharLES Unified Simulation Template
 # ==============================================================================
 
-# Defining parameters for fluid properties
+# ------------------------------------------------------------------------------
+# 0. YAML Configuration Metadata
+# ------------------------------------------------------------------------------
+# [Geometry]
+# STRUCTURE_TYPE: $(GEOM_STRUCTURE_TYPE)
+DEFINE L = $(L)
+DEFINE D = $(D)
+DEFINE SPAN_Z = $(GEOM_SPAN_Z)
+DEFINE DOMAIN_Z = $(GEOM_DOMAIN_Z)
+
+# [Domain Sizing]
+DEFINE L1 = $(L1)
+DEFINE L2 = $(L2)
+DEFINE L3 = $(L3)
+DEFINE H = $(H)
 DEFINE TOTAL_DOMAIN_LENGTH = $(TOTAL_DOMAIN_LENGTH)
+
+# [Mesh Control]
+# TARGET_Y_PLUS: $(MESH_TARGET_Y_PLUS)
+DEFINE HCP_DELTA_VAL = $(HCP_DELTA_VAL)
+DEFINE MAX_REFINEMENT_LEVEL = $(MAX_REFINEMENT_LEVEL)
+DEFINE NLAYERS_VAL = $(NLAYERS_VAL)
+DEFINE NSMOOTH_VAL = $(NSMOOTH_VAL)
+
+# [Flow Physics]
+DEFINE TARGET_REYNOLDS = $(PHYSICS_TARGET_REYNOLDS)
+DEFINE MACH_NUMBER = $(PHYSICS_MACH_NUMBER)
+DEFINE INFLOW_U = $(U_INF)
+DEFINE INFLOW_RHO = $(RHO_INF)
+DEFINE INFLOW_T = $(T_INF)
+DEFINE GAMMA_VAL = $(G)
+DEFINE PRANDTL_VAL = $(PR_LAM_VAL)
+DEFINE MU_POWER_LAW_VAL = $(MU_POWER_LAW_VAL)
+
+# [Boundary Conditions Setup]
+# WALL_BC: $(WALL_BC_TYPE) (T = $(WALL_T))
+# Z_BOUNDARIES: $(Z_BOUNDARIES)
+
+# ------------------------------------------------------------------------------
+# 1. Derived Fluid Properties
+# ------------------------------------------------------------------------------
 DEFINE P_INF = $(P_INF)
 DEFINE MU_INF = $(MU_INF)
 

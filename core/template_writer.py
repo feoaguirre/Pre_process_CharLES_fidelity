@@ -39,12 +39,16 @@ class TemplateWriter:
             return yaml.safe_load(file)
 
     def _build_replacement_dict(self, step: str) -> Dict[str, Any]:
+        """
+        Constructs a key-value mapping between the DEFINE tokens expected in the 
+        .in templates and the physical/numerical data.
+        """
         phys = self.state.flow_physics
         geom = self.state.geometry
         ctrl = self.state.simulation_control
         io = self.state.io_and_probes
         
-        # Thermal boundary condition string formatting (strictly obeying user input)
+        # Thermal boundary condition string formatting
         raw_wall_bc = self.state.boundary_conditions.wall_bc.upper()
         wall_t = getattr(self.state.boundary_conditions, 'wall_T', 1.0)
         formatted_wall_bc = f"WALL_ISOTHERMAL T_WALL {wall_t}" if raw_wall_bc == "ISOTHERMAL" else ("WALL_ADIABATIC" if raw_wall_bc == "ADIABATIC" else raw_wall_bc)
@@ -58,6 +62,7 @@ class TemplateWriter:
             simtime = ctrl.transient_simtime_ftt * ftt_duration
             restart_cmd = "RESTART ./helping_files/restart.mles"
             p_inf_calc = f"({phys.inflow_u}*{phys.inflow_u}*{phys.inflow_rho}*1.0/({phys.gamma}*{phys.mach_number}*{phys.mach_number}))"
+            # Inicia fluido em repouso para evitar impulsive start
             init_cmd = f"INIT_RUP {phys.inflow_rho} 0 0 0 {p_inf_calc}"
         else:
             simtime = ctrl.steady_simtime_ftt * ftt_duration
@@ -82,6 +87,18 @@ class TemplateWriter:
             "INIT_CMD": init_cmd,
             "WALL_BC": formatted_wall_bc,
             
+            # --- NOVAS VARIÁVEIS DE METADADOS (YAML) ---
+            "GEOM_STRUCTURE_TYPE": geom.structure_type,
+            "GEOM_SPAN_Z": geom.span_z,
+            "GEOM_DOMAIN_Z": geom.domain_z,
+            "MESH_TARGET_Y_PLUS": self.state.mesh_control.target_y_plus,
+            "PHYSICS_TARGET_REYNOLDS": phys.target_reynolds,
+            "PHYSICS_MACH_NUMBER": phys.mach_number,
+            "WALL_BC_TYPE": self.state.boundary_conditions.wall_bc,
+            "WALL_T": wall_t,
+            "Z_BOUNDARIES": self.state.boundary_conditions.z_boundaries,
+            # -------------------------------------------
+            
             # Legacy Stitch Replacements
             "HCP_DELTA_VAL": self.mesh.hcp_delta,
             "MAX_REFINEMENT_LEVEL": self.mesh.max_refinement_level,
@@ -96,7 +113,8 @@ class TemplateWriter:
             "L3": self.physics.postgap_length,
             "H": self.physics.domain_height,
         }
-
+    
+    
     def _setup_directories(self):
         """Builds the strict directory hierarchy required for simulation results."""
         dirs_to_create = [
@@ -132,7 +150,7 @@ class TemplateWriter:
                 # Assign interval based on probe type and simulation phase (Transient/Steady)
                 if is_large_data:
                     interval = config.transient_write_interval if step == "transient" else config.steady_write_interval
-                else:
+                else:   
                     interval = config.write_interval
                 
                 # Format variables explicitly requested by the user
